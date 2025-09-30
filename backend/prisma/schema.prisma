@@ -1,0 +1,327 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model with enhanced profile features
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  username      String   @unique
+  name          String?
+  password      String   // Hashed password
+  avatar        String?
+  bio           String?
+  role          Role     @default(USER)
+  isActive      Boolean  @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  posts         Post[]
+  comments      Comment[]
+  watchlist     WatchlistItem[]
+  favourites    Favourite[]
+  watchHistory  WatchHistory[]
+  ratings       Rating[]
+  moderationLog ModerationLog[]
+  reports       Report[]
+  warnings      UserWarning[]
+  givenWarnings UserWarning[] @relation("WarningModerator")
+  notifications Notification[]
+  postLikes     PostLike[]
+  commentLikes  CommentLike[]
+
+  @@map("users")
+}
+
+// Enhanced Post model for community discussions
+model Post {
+  id          String     @id @default(cuid())
+  title       String
+  content     String
+  type        PostType   @default(DISCUSSION)
+  status      PostStatus @default(DRAFT)
+  authorId    String
+  animeId     String?
+  tags        String?
+  views       Int        @default(0)
+  likesCount  Int        @default(0)
+  isPinned    Boolean    @default(false)
+  isLocked    Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  author      User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments    Comment[]
+  likes       PostLike[]
+
+  @@map("posts")
+}
+
+// Comment model for discussions and anime reviews
+model Comment {
+  id          String      @id @default(cuid())
+  content     String
+  authorId    String
+  postId      String?
+  animeId     String?
+  parentId    String?     // For nested replies
+  likesCount  Int         @default(0)
+  isEdited    Boolean     @default(false)
+  isDeleted   Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relations
+  author      User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  post        Post?       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parent      Comment?    @relation("CommentReplies", fields: [parentId], references: [id])
+  replies     Comment[]   @relation("CommentReplies")
+  commentLikes CommentLike[]
+
+  @@map("comments")
+}
+
+// Watchlist for users to track anime they want to watch
+model WatchlistItem {
+  id          String   @id @default(cuid())
+  userId      String
+  animeId     String
+  status      WatchStatus @default(PLAN_TO_WATCH)
+  rating      Int?     // 1-10 rating
+  notes       String?
+  addedAt     DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, animeId])
+  @@map("watchlist_items")
+}
+
+// Favourites for users to mark liked anime
+model Favourite {
+  id          String   @id @default(cuid())
+  userId      String
+  animeId     String
+  createdAt   DateTime @default(now())
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, animeId])
+  @@map("favourites")
+}
+
+// Watch history for tracking viewed episodes
+model WatchHistory {
+  id          String   @id @default(cuid())
+  userId      String
+  animeId     String
+  episodeNum  Int
+  watchedAt   DateTime @default(now())
+  progress    Int      @default(0) // Progress in seconds
+  duration    Int      // Total episode duration in seconds
+  completed   Boolean  @default(false)
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, animeId, episodeNum])
+  @@map("watch_history")
+}
+
+// Rating system for anime
+model Rating {
+  id          String   @id @default(cuid())
+  userId      String
+  animeId     String
+  rating      Int      // 1-10
+  review      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, animeId])
+  @@map("ratings")
+}
+
+// Post likes for engagement
+model PostLike {
+  id          String   @id @default(cuid())
+  userId      String
+  postId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, postId])
+  @@map("post_likes")
+}
+
+// Comment likes for engagement
+model CommentLike {
+  id          String   @id @default(cuid())
+  userId      String
+  commentId   String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment     Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, commentId])
+  @@map("comment_likes")
+}
+
+// Moderation log for tracking moderation actions
+model ModerationLog {
+  id          String           @id @default(cuid())
+  moderatorId String
+  targetType  ModerationTarget
+  targetId    String
+  action      ModerationAction
+  reason      String?
+  createdAt   DateTime         @default(now())
+
+  // Relations
+  moderator   User             @relation(fields: [moderatorId], references: [id])
+
+  @@map("moderation_logs")
+}
+
+// Report system for user-generated content moderation
+model Report {
+  id          String       @id @default(cuid())
+  reporterId  String
+  targetType  ModerationTarget
+  targetId    String
+  reason      String
+  description String?
+  status      ReportStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relations
+  reporter    User         @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@map("reports")
+}
+
+// User warning system for moderation
+model UserWarning {
+  id          String           @id @default(cuid())
+  userId      String
+  moderatorId String
+  reason      String
+  severity    WarningSeverity  @default(LOW)
+  isActive    Boolean          @default(true)
+  expiresAt   DateTime?
+  createdAt   DateTime         @default(now())
+
+  // Relations
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  moderator   User             @relation("WarningModerator", fields: [moderatorId], references: [id])
+
+  @@map("user_warnings")
+}
+
+// Notification system for user alerts
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      NotificationType @default(INFO)
+  isRead    Boolean          @default(false)
+  data      String?          // JSON data for additional info
+  createdAt DateTime         @default(now())
+
+  // Relations
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// Enums
+enum Role {
+  USER
+  MOD
+  ADMIN
+  OWNER
+}
+
+enum PostType {
+  DISCUSSION
+  REVIEW
+  QUESTION
+  ANNOUNCEMENT
+  FAN_ART
+  THEORY
+}
+
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+  DELETED
+}
+
+enum WatchStatus {
+  PLAN_TO_WATCH
+  WATCHING
+  COMPLETED
+  ON_HOLD
+  DROPPED
+}
+
+enum ModerationTarget {
+  POST
+  COMMENT
+  USER
+  ANIME
+}
+
+enum ModerationAction {
+  APPROVE
+  DELETE
+  HIDE
+  WARN
+  BAN
+  PIN
+  LOCK
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWING
+  RESOLVED
+  DISMISSED
+}
+
+enum WarningSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum NotificationType {
+  INFO
+  WARNING
+  SUCCESS
+  ERROR
+  MODERATION
+  SYSTEM
+}
